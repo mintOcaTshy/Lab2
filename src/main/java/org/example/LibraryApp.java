@@ -3,118 +3,142 @@ package org.example;
 import java.io.*;
 import java.util.*;
 
-class Human implements Serializable {
-    private static final long serialVersionUID = 1L;
+class Human {
     String firstName;
     String lastName;
-
     public Human(String firstName, String lastName) {
         this.firstName = firstName;
         this.lastName = lastName;
     }
-
-    @Override
-    public String toString() {
-        return firstName + " " + lastName;
-    }
 }
 
 class Author extends Human {
-    public Author(String firstName, String lastName) {
-        super(firstName, lastName);
-    }
+    public Author(String firstName, String lastName) { super(firstName, lastName); }
 }
 
-class Book implements Serializable {
-    private static final long serialVersionUID = 1L;
+class Book {
     String title;
     int year;
     List<Author> authors;
-
     public Book(String title, int year, List<Author> authors) {
         this.title = title;
         this.year = year;
         this.authors = authors;
-    }
-
-    @Override
-    public String toString() {
-        return "'" + title + "' (" + year + "), автори: " + authors;
     }
 }
 
 class BookReader extends Human {
     int readerId;
     List<Book> borrowedBooks = new ArrayList<>();
-
     public BookReader(String firstName, String lastName, int readerId) {
         super(firstName, lastName);
         this.readerId = readerId;
     }
-
-    public void borrowBook(Book book) {
-        borrowedBooks.add(book);
-    }
-
-    @Override
-    public String toString() {
-        return "Читач #" + readerId + ": " + super.toString() + ", книги: " + borrowedBooks;
-    }
 }
 
-// головний контейнер
 class Library implements Serializable {
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;
     String name;
-    List<Book> allBooks = new ArrayList<>();
-    List<BookReader> allReaders = new ArrayList<>();
 
-    public Library(String name) {
-        this.name = name;
+    transient List<Book> allBooks = new ArrayList<>();
+    transient List<BookReader> allReaders = new ArrayList<>();
+
+    public Library(String name) { this.name = name; }
+
+    private void writeObject(ObjectOutputStream out) throws IOException {
+        out.defaultWriteObject();
+
+        out.writeInt(allBooks.size());
+        for (Book b : allBooks) {
+            saveBookData(out, b);
+        }
+
+        out.writeInt(allReaders.size());
+        for (BookReader r : allReaders) {
+            out.writeObject(r.firstName);
+            out.writeObject(r.lastName);
+            out.writeInt(r.readerId);
+
+            out.writeInt(r.borrowedBooks.size());
+            for (Book b : r.borrowedBooks) {
+                saveBookData(out, b);
+            }
+        }
+    }
+
+    private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        int bookCount = in.readInt();
+        allBooks = new ArrayList<>();
+        for (int i = 0; i < bookCount; i++) {
+            allBooks.add(loadBookData(in));
+        }
+
+        int readerCount = in.readInt();
+        allReaders = new ArrayList<>();
+        for (int i = 0; i < readerCount; i++) {
+            BookReader r = new BookReader((String)in.readObject(), (String)in.readObject(), in.readInt());
+            int borrowedCount = in.readInt();
+            for (int j = 0; j < borrowedCount; j++) {
+                r.borrowedBooks.add(loadBookData(in));
+            }
+            allReaders.add(r);
+        }
+    }
+
+    private void saveBookData(ObjectOutputStream out, Book b) throws IOException {
+        out.writeObject(b.title);
+        out.writeInt(b.year);
+        out.writeInt(b.authors.size());
+        for (Author a : b.authors) {
+            out.writeObject(a.firstName);
+            out.writeObject(a.lastName);
+        }
+    }
+
+    private Book loadBookData(ObjectInputStream in) throws IOException, ClassNotFoundException {
+        String title = (String) in.readObject();
+        int year = in.readInt();
+        int authCount = in.readInt();
+        List<Author> authors = new ArrayList<>();
+        for (int i = 0; i < authCount; i++) {
+            authors.add(new Author((String)in.readObject(), (String)in.readObject()));
+        }
+        return new Book(title, year, authors);
     }
 
     @Override
     public String toString() {
-        return "Бібліотека: " + name + "\nКниг: " + allBooks.size() + "\nЧитачів: " + allReaders.size();
+        return "Бібліотека (v2): " + name + ", Книг: " + allBooks.size() + ", Читачів: " + allReaders.size();
     }
 }
-
 
 public class LibraryApp {
     public static void main(String[] args) {
-        Library myLibrary = new Library("Центральна міська бібліотека");
+        Library myLibrary = new Library("Одеська японська бібліотека");
 
-        Author author = new Author("Рюноске", "Акутаґава");
-        Book harryPotter = new Book("Ворота Расьомон", 1997, Arrays.asList(author));
+        Author murakami = new Author("Харукі", "Муракамі");
+        Book book1 = new Book("Норвезький ліс", 1987, Collections.singletonList(murakami));
+        myLibrary.allBooks.add(book1);
 
-        BookReader reader = new BookReader("Наталя", "Петренко", 101);
-        reader.borrowBook(harryPotter);
-
-        myLibrary.allBooks.add(harryPotter);
+        BookReader reader = new BookReader("Наталя", "Петренко", 445);
+        reader.borrowedBooks.add(book1);
         myLibrary.allReaders.add(reader);
 
-        System.out.println("/// До збереження ///");
-        System.out.println(myLibrary);
-        System.out.println(reader);
+        String filename = "library_custom.ser";
 
-        String filename = "library_data.ser";
-
-// cеріалізація
         try (ObjectOutputStream out = new ObjectOutputStream(new FileOutputStream(filename))) {
             out.writeObject(myLibrary);
-            System.out.println("\nБібліотеку збережено у файл!");
-        } catch (IOException e) {
-            System.out.println("Ой! Помилка при збереженні: " + e.getMessage());
-        }
+            System.out.println("/// Успішно збережено у " + filename + " ///");
+        } catch (IOException e) { e.printStackTrace(); }
 
-// десеріалізація
         try (ObjectInputStream in = new ObjectInputStream(new FileInputStream(filename))) {
-            Library loadedLibrary = (Library) in.readObject();
-            System.out.println("\n/// Після відновлення з файлу ///");
-            System.out.println(loadedLibrary);
-            System.out.println(loadedLibrary.allReaders.get(0));
-        } catch (Exception e) {
-            System.out.println("Ой! Помилка при читанні: " + e.getMessage());
-        }
+            Library loaded = (Library) in.readObject();
+            System.out.println("\n/// Дані відновлено! ///");
+            System.out.println(loaded);
+
+            BookReader restoredReader = loaded.allReaders.get(0);
+            System.out.println("Читач: " + restoredReader.firstName + " тримає книгу: " + restoredReader.borrowedBooks.get(0).title);
+        } catch (Exception e) { e.printStackTrace(); }
     }
 }
